@@ -1,27 +1,21 @@
+
 <html>
 <head>
     <title>Otimizador de Rede de Entregas</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     
-    <style>
-        /* Define a altura da "caixa" com id="mapa" */
-        #mapa { 
-            height: 600px; /* Aumentei para 600px para ficar melhor */
-            width: 100%;
-        }
-        body {
-            font-family: sans-serif;
-            padding: 0;
-            margin: 20px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css"> 
 </head>
 <body>
 
     <h1>Dashboard da Rede de Entregas</h1>
 
-    <div id="mapa"></div>
+    <div style="margin-bottom: 15px;">
+        <button id="optimize-button">Otimizar Rotas</button>
+    </div>
+
+    <div id="mapa" style="height: 600px; width: 100%;"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 

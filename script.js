@@ -1,101 +1,219 @@
 // =======================================================
-// 1. DADOS MOCK
+// 1. CONFIGURAÇÕES E ESTADO GLOBAL
 // =======================================================
-const mockApiData = {
-  "nodes": [
-    { "id": "D1", "type": "deposito", "name": "Depósito Principal - Maceió", "lat": -9.665, "lon": -35.735 },
-    { "id": "H1", "type": "hub", "name": "Hub Logístico - Paripueira", "lat": -9.465, "lon": -35.555 },
-    { "id": "Z1", "type": "zonaEntrega", "name": "Zona de Entrega - Barra de Santo Antônio", "lat": -9.404, "lon": -35.507 },
-    { "id": "Z2", "type": "zonaEntrega", "name": "Zona de Entrega - Praia da Sereia", "lat": -9.563, "lon": -35.660 },
-    { "id": "Z3", "type": "zonaEntrega", "name": "Zona de Entrega - Cidade Universitária", "lat": -9.549, "lon": -35.777 },
-    { "id": "H2", "type": "hub", "name": "Hub logístico - Pontal da Barra", "lat": -9.693, "lon": -35.775 },
-    { "id": "Z4", "type": "zonaEntrega", "name": "Zona de Entrega - Ilha de Santa Rita", "lat": -9.713, "lon": -35.820 },
-    { "id": "Z5", "type": "zonaEntrega", "name": "Zona de Entrega - Ilha do Lisboa", "lat": -9.673, "lon": -35.780 },
-  ],
-  "routes": [
-    // Rota Saudável (25% de uso)
-    { "from_id": "D1", "to_id": "H1", "capacity": 1000, "current_flow": 250 },
-    // Rota em Alerta/Gargalo (96% de uso)
-    { "from_id": "H1", "to_id": "Z1", "capacity": 500, "current_flow": 480 },
-    // Rota em Atenção (70% de uso)
-    { "from_id": "D1", "to_id": "Z2", "capacity": 300, "current_flow": 210 },
-    { "from_id": "D1", "to_id": "Z3", "capacity": 400, "current_flow": 310 },
-    { "from_id": "D1", "to_id": "H2", "capacity": 200, "current_flow": 50 },
-    { "from_id": "H2", "to_id": "Z4", "capacity": 150, "current_flow": 50 },
-    { "from_id": "H2", "to_id": "Z5", "capacity": 80, "current_flow": 0 },
-  ]
+
+// URL base da sua API. Altere se o Dev 5 rodar em uma porta diferente.
+const API_BASE_URL = "http://127.0.0.1:8000";
+
+// Variável para guardar os dados que vêm da API
+let appData = {
+    clientes: [],
+    pedidos: [],
+    veiculos: []
 };
+
+// Guarda as camadas do mapa para poder limpá-las depois
+let mapLayers = [];
 
 // =======================================================
 // 2. INICIALIZAÇÃO DO MAPA
 // =======================================================
-const map = L.map('mapa').setView([-9.665, -35.735], 12); 
+const map = L.map('mapa').setView([-9.56, -35.7], 12); // Foco ajustado para Maceió
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
 // =======================================================
-// 3. FUNÇÕES DE ESTILO E DESENHO
+// 3. FUNÇÕES DE INTERAÇÃO COM A API
 // =======================================================
 
-/**
- 
- * Calcula o estilo de uma rota (cor e espessura) baseado na sua utilização.
- */
-function getEstiloDaRota(route) {
-    // Evita divisão por zero se a capacidade for 0
-    if (route.capacity === 0) {
-        return { color: '#888', weight: 2 }; 
+// Função principal que é chamada quando a página carrega
+async function inicializarAplicacao() {
+    try {
+        // Busca os dados iniciais em paralelo para ser mais rápido
+        const [clientes, pedidos, veiculos] = await Promise.all([
+            fetch(`${API_BASE_URL}/clientes`).then(res => res.json()),
+            fetch(`${API_BASE_URL}/pedidos`).then(res => res.json()),
+            fetch(`${API_BASE_URL}/veiculos`).then(res => res.json())
+        ]);
+
+        // Guarda os dados no estado global
+        appData = { clientes, pedidos, veiculos };
+
+        console.log("Dados iniciais carregados:", appData);
+        alert("Dados de clientes, pedidos e veículos carregados da API!");
+
+        // Desenha apenas os clientes no mapa inicialmente
+        desenharClientesIniciais(clientes);
+
+    } catch (error) {
+        console.error("Erro ao inicializar a aplicação:", error);
+        alert("Falha ao carregar dados da API. Verifique se o servidor backend está rodando.");
     }
-
-    const utilizacao = route.current_flow / route.capacity;
-    let cor;
-
-    if (utilizacao > 0.9) {
-        cor = 'red'; // Acima de 90% -> Vermelho
-    } else if (utilizacao > 0.7) {
-        cor = 'orange'; // Entre 70% e 90% -> Laranja
-    } else if (utilizacao > 0) {
-        cor = '#008000'; // Verde escuro para rotas com fluxo
-    } else {
-        cor = '#aaa'; // Cinza para rotas sem fluxo
-    }
-
-    // A espessura varia de 3 (para 0% de uso) a 10 (para 100% de uso)
-    const espessura = 3 + (utilizacao * 7);
-
-    return { color: cor, weight: espessura };
 }
 
-function desenharRede(dados) {
-    dados.nodes.forEach(node => {
-        L.marker([node.lat, node.lon])
-         .addTo(map)
-         .bindPopup(`<b>${node.name}</b><br>Tipo: ${node.type}`);
-    });
+// Função chamada quando o botão "Otimizar Rotas" é clicado
+async function otimizarRotas() {
+    alert("Enviando dados para otimização... Isso pode levar um momento.");
+    try {
+        // Envia os dados carregados para o endpoint de otimização
+        const response = await fetch(`${API_BASE_URL}/optimize-routes`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            // O corpo da requisição é o nosso objeto appData convertido para JSON
+            body: JSON.stringify(appData)
+        });
 
-    dados.routes.forEach(route => {
-        const fromNode = dados.nodes.find(node => node.id === route.from_id);
-        const toNode = dados.nodes.find(node => node.id === route.to_id);
+        if (!response.ok) {
+            // Se a resposta não for OK, lê o erro e mostra
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Erro na otimização");
+        }
 
-        if (fromNode && toNode) {
-            const latlngs = [
-                [fromNode.lat, fromNode.lon],
-                [toNode.lat, toNode.lon]
-            ];
+        const optimizationResult = await response.json();
+        console.log("Resultado da otimização:", optimizationResult);
+        alert("Otimização concluída! Desenhando rotas no mapa.");
 
-            
-            const estiloDaRota = getEstiloDaRota(route);
+        // Desenha o resultado no mapa
+        desenharRotasOtimizadas(optimizationResult);
 
-            L.polyline(latlngs, estiloDaRota)
-             .addTo(map)
-             .bindPopup(`Rota: ${fromNode.name} -> ${toNode.name}<br>Fluxo: ${route.current_flow} / ${route.capacity}`);
+    } catch (error) {
+        console.error("Erro ao otimizar rotas:", error);
+        alert(`Falha na otimização: ${error.message}`);
+    }
+}
+
+// =======================================================
+// 4. FUNÇÕES DE DESENHO NO MAPA
+// =======================================================
+
+// Limpa todas as camadas (marcadores, linhas) do mapa
+function limparMapa() {
+    mapLayers.forEach(layer => map.removeLayer(layer));
+    mapLayers = [];
+}
+
+// Desenha apenas os marcadores dos clientes no início
+function desenharClientesIniciais(clientes) {
+    limparMapa();
+    clientes.forEach(cliente => {
+        if (cliente.latitude && cliente.longitude) {
+            const marker = L.marker([cliente.latitude, cliente.longitude])
+                .addTo(map)
+                .bindPopup(`<b>${cliente.nome}</b><br>Zona: ${cliente.zona}`);
+            mapLayers.push(marker);
         }
     });
 }
 
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+// FUNÇÃO MODIFICADA ABAIXO
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+// Desenha o resultado completo da otimização
+function desenharRotasOtimizadas(result) {
+    limparMapa();
+
+    result.routes.forEach((vehicleRoute) => {
+        const latlngs = [];
+
+        // --- LÓGICA DE COR BASEADA NA LOTAÇÃO DO VEÍCULO ---
+        // 1. Encontrar o veículo original na nossa lista de dados para pegar sua capacidade
+        const veiculoOriginal = appData.veiculos.find(v => v.id === vehicleRoute.vehicle_id);
+        let corDaRota = '#3388ff'; // Cor padrão azul
+
+        if (veiculoOriginal && veiculoOriginal.capacidade > 0) {
+            // 2. Calcular a utilização da capacidade
+            const utilizacao = vehicleRoute.total_volume / veiculoOriginal.capacidade;
+
+            // 3. Definir a cor com base na utilização
+            if (utilizacao > 0.9) {
+                corDaRota = 'red'; // Acima de 90% -> Vermelho (Gargalo)
+            } else if (utilizacao > 0.7) {
+                corDaRota = 'orange'; // De 70% a 90% -> Laranja (Atenção)
+            } else if (utilizacao > 0) {
+                corDaRota = '#008000'; // Abaixo de 70% e com carga -> Verde (Saudável)
+            } else {
+                corDaRota = '#888'; // Rota vazia -> Cinza
+            }
+        }
+        // --- FIM DA LÓGICA DE COR ---
+
+        vehicleRoute.route.forEach(segmento => {
+            if (segmento.pedido_id !== 0) {
+                const marker = L.marker([segmento.latitude, segmento.longitude], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div style="background-color:${corDaRota};" class="marker-pin"></div><i>${segmento.pedido_id}</i>`,
+                        iconSize: [30, 42],
+                        iconAnchor: [15, 42]
+                    })
+                })
+                    .addTo(map)
+                    .bindPopup(`<b>Cliente: ${segmento.cliente_nome}</b><br>Pedido ID: ${segmento.pedido_id}<br>Volume: ${segmento.volume}`);
+                mapLayers.push(marker);
+            }
+            latlngs.push([segmento.latitude, segmento.longitude]);
+        });
+
+        if (latlngs.length > 1 && veiculoOriginal) {
+            const polyline = L.polyline(latlngs, { color: corDaRota, weight: 5, opacity: 0.8 })
+                .addTo(map)
+                .bindPopup(`<b>Rota do Veículo ${vehicleRoute.vehicle_id} (${veiculoOriginal.tipo})</b><br>
+                            Lotação: ${vehicleRoute.total_volume} / ${veiculoOriginal.capacidade}<br>
+                            Distância Total: ${(vehicleRoute.total_distance / 1000).toFixed(2)} km`);
+
+            mapLayers.push(polyline);
+        }
+    });
+}
+
+
 // =======================================================
-// 4. INÍCIO DA EXECUÇÃO
+// 5. INÍCIO DA EXECUÇÃO E EVENTOS
 // =======================================================
-desenharRede(mockApiData);
+
+// Adiciona um listener para o botão de otimização
+document.getElementById('optimize-button').addEventListener('click', otimizarRotas);
+
+// Chama a função para carregar os dados iniciais assim que a página carrega
+inicializarAplicacao();
+
+// Adiciona um pouco de CSS para os marcadores personalizados (opcional)
+const style = document.createElement('style');
+style.innerHTML = `
+.marker-pin {
+    width: 30px;
+    height: 30px;
+    border-radius: 50% 50% 50% 0;
+    position: absolute;
+    transform: rotate(-45deg);
+    left: 50%;
+    top: 50%;
+    margin: -15px 0 0 -15px;
+}
+.marker-pin::after {
+    content: '';
+    width: 24px;
+    height: 24px;
+    margin: 3px 0 0 3px;
+    background: #fff;
+    position: absolute;
+    border-radius: 50%;
+}
+.custom-div-icon i {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    top: 6px;
+    color: black;
+    font-weight: bold;
+    font-family: sans-serif;
+    font-size: 12px;
+}
+`;
+document.head.appendChild(style);
