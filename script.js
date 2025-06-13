@@ -63,12 +63,10 @@ async function otimizarRotas() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            // O corpo da requisição é o nosso objeto appData convertido para JSON
             body: JSON.stringify(appData)
         });
 
         if (!response.ok) {
-            // Se a resposta não for OK, lê o erro e mostra
             const errorData = await response.json();
             throw new Error(errorData.detail || "Erro na otimização");
         }
@@ -80,6 +78,9 @@ async function otimizarRotas() {
         // Desenha o resultado no mapa
         desenharRotasOtimizadas(optimizationResult);
 
+        // *** ADICIONADA A CHAMADA PARA O RELATÓRIO AQUI ***
+        gerarRelatorio(optimizationResult, appData.veiculos);
+
     } catch (error) {
         console.error("Erro ao otimizar rotas:", error);
         alert(`Falha na otimização: ${error.message}`);
@@ -87,7 +88,7 @@ async function otimizarRotas() {
 }
 
 // =======================================================
-// 4. FUNÇÕES DE DESENHO NO MAPA
+// 4. FUNÇÕES DE DESENHO E RELATÓRIO
 // =======================================================
 
 // Limpa todas as camadas (marcadores, linhas) do mapa
@@ -109,11 +110,6 @@ function desenharClientesIniciais(clientes) {
     });
 }
 
-
-// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-// FUNÇÃO MODIFICADA ABAIXO
-// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
 // Desenha o resultado completo da otimização
 function desenharRotasOtimizadas(result) {
     limparMapa();
@@ -121,28 +117,24 @@ function desenharRotasOtimizadas(result) {
     result.routes.forEach((vehicleRoute) => {
         const latlngs = [];
 
-        // --- LÓGICA DE COR BASEADA NA LOTAÇÃO DO VEÍCULO ---
-        // 1. Encontrar o veículo original na nossa lista de dados para pegar sua capacidade
+        // Lógica de cor baseada na lotação do veículo
         const veiculoOriginal = appData.veiculos.find(v => v.id === vehicleRoute.vehicle_id);
-        let corDaRota = '#3388ff'; // Cor padrão azul
+        let corDaRota = '#3388ff';
 
         if (veiculoOriginal && veiculoOriginal.capacidade > 0) {
-            // 2. Calcular a utilização da capacidade
             const utilizacao = vehicleRoute.total_volume / veiculoOriginal.capacidade;
-
-            // 3. Definir a cor com base na utilização
             if (utilizacao > 0.9) {
-                corDaRota = 'red'; // Acima de 90% -> Vermelho (Gargalo)
+                corDaRota = 'red';
             } else if (utilizacao > 0.7) {
-                corDaRota = 'orange'; // De 70% a 90% -> Laranja (Atenção)
+                corDaRota = 'orange';
             } else if (utilizacao > 0) {
-                corDaRota = '#008000'; // Abaixo de 70% e com carga -> Verde (Saudável)
+                corDaRota = '#008000';
             } else {
-                corDaRota = '#888'; // Rota vazia -> Cinza
+                corDaRota = '#888';
             }
         }
-        // --- FIM DA LÓGICA DE COR ---
 
+        // Adiciona os marcadores de cada parada na rota
         vehicleRoute.route.forEach(segmento => {
             if (segmento.pedido_id !== 0) {
                 const marker = L.marker([segmento.latitude, segmento.longitude], {
@@ -160,6 +152,7 @@ function desenharRotasOtimizadas(result) {
             latlngs.push([segmento.latitude, segmento.longitude]);
         });
 
+        // Desenha a linha da rota do veículo
         if (latlngs.length > 1 && veiculoOriginal) {
             const polyline = L.polyline(latlngs, { color: corDaRota, weight: 5, opacity: 0.8 })
                 .addTo(map)
@@ -172,6 +165,50 @@ function desenharRotasOtimizadas(result) {
     });
 }
 
+// >>> FUNÇÃO DE RELATÓRIO (NO LUGAR CERTO) <<<
+function gerarRelatorio(optimizationResult, todosOsVeiculos) {
+    const container = document.getElementById('relatorio-container');
+    container.innerHTML = '';
+
+    let relatorioHTML = '<h3>Relatório da Otimização</h3>';
+
+    // ANÁLISE DE GARGALOS
+    relatorioHTML += '<h4>Veículos com Alta Utilização (Gargalos)</h4>';
+    const veiculosGargalo = optimizationResult.routes.filter(route => {
+        const veiculo = todosOsVeiculos.find(v => v.id === route.vehicle_id);
+        if (!veiculo || veiculo.capacidade === 0) return false;
+        return (route.total_volume / veiculo.capacidade) > 0.9;
+    });
+
+    if (veiculosGargalo.length > 0) {
+        relatorioHTML += '<ul>';
+        veiculosGargalo.forEach(route => {
+            const veiculo = todosOsVeiculos.find(v => v.id === route.vehicle_id);
+            const utilizacaoPercent = Math.round((route.total_volume / veiculo.capacidade) * 100);
+            relatorioHTML += `<li><b>Veículo ${veiculo.id} (${veiculo.tipo}):</b> Utilizando ${utilizacaoPercent}% da sua capacidade (${route.total_volume} / ${veiculo.capacidade}).</li>`;
+        });
+        relatorioHTML += '</ul>';
+    } else {
+        relatorioHTML += '<p>Nenhum gargalo identificado (nenhum veículo operando acima de 90% da capacidade).</p>';
+    }
+
+    // ANÁLISE DE CAPACIDADE OCIOSA
+    relatorioHTML += '<h4>Capacidade Ociosa</h4>';
+    const veiculosUsadosIds = optimizationResult.routes.map(r => r.vehicle_id);
+    const veiculosOciosos = todosOsVeiculos.filter(v => v.disponivel && !veiculosUsadosIds.includes(v.id));
+
+    if (veiculosOciosos.length > 0) {
+        relatorioHTML += '<ul>';
+        veiculosOciosos.forEach(veiculo => {
+            relatorioHTML += `<li><b>Veículo ${veiculo.id} (${veiculo.tipo})</b> estava disponível mas não foi utilizado.</li>`;
+        });
+        relatorioHTML += '</ul>';
+    } else {
+        relatorioHTML += '<p>Nenhum veículo disponível ficou ocioso.</p>';
+    }
+
+    container.innerHTML = relatorioHTML;
+}
 
 // =======================================================
 // 5. INÍCIO DA EXECUÇÃO E EVENTOS
